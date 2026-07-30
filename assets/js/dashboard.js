@@ -157,8 +157,8 @@ async function loadCampaigns() {
   tbody.innerHTML = campaigns.map(c => `
     <tr>
       <td>
-        <div class="fw-semibold" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.subject}">${c.name}</div>
-        <small class="text-muted">${c.subject || ''}</small>
+        <a href="report.php?id=${c.id}" target="_blank" rel="noopener" class="fw-semibold d-block text-decoration-none" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.subject}">${c.name}</a>
+        <a href="report.php?id=${c.id}" target="_blank" rel="noopener" class="text-muted text-decoration-none d-block" style="font-size:0.8em;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.subject || ''}</a>
       </td>
       <td><span class="badge-status badge-${c.status}">${c.status}</span></td>
       <td>${(c.total_recipients || 0).toLocaleString()}</td>

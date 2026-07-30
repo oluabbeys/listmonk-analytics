@@ -27,6 +27,7 @@ if (isset($_GET['action'])) {
         $stmt = $db->prepare("SELECT * FROM campaigns WHERE id = ?");
         $stmt->execute([$id]);
         $campaign = $stmt->fetch();
+        if (!$campaign) { echo json_encode(['error' => 'Campaign not found']); exit; }
 
         // Lists
         $stmt = $db->prepare("
@@ -493,6 +494,34 @@ function screenshotTip() {
 }
 
 document.getElementById('q').addEventListener('keypress', e => { if(e.key==='Enter') search(); });
+
+// Auto-load a report directly when linked as report.php?id=<campaign_id>
+async function loadById(id) {
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('report').style.display = 'none';
+  document.getElementById('hint').className = 'hint';
+  document.getElementById('hint').textContent = 'Loading report...';
+  try {
+    const res = await fetch(`report.php?action=report&id=${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (data.error || !data.campaign) {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('hint').className = 'hint error';
+      document.getElementById('hint').textContent = `❌ Campaign #${id} not found`;
+      return;
+    }
+    renderReport(data);
+  } catch(e) {
+    document.getElementById('spinner').style.display = 'none';
+    document.getElementById('hint').className = 'hint error';
+    document.getElementById('hint').textContent = '❌ Database connection error: ' + e.message;
+  }
+}
+
+(function initFromURL() {
+  const id = new URLSearchParams(window.location.search).get('id');
+  if (id) loadById(id);
+})();
 </script>
 </body>
 </html>
