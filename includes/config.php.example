@@ -8,6 +8,10 @@ define('DB_PASS', 'your-db-password-here');
 define('DASHBOARD_TITLE', 'ZODML Listmonk Analytics');
 define('REFRESH_INTERVAL', 30);
 
+define('ADMIN_USER', 'admin');
+// Generate with: php -r "echo password_hash('your-password', PASSWORD_DEFAULT);"
+define('ADMIN_PASS_HASH', '$2y$10$replace-with-a-real-bcrypt-hash');
+
 function getDB() {
     static $pdo = null;
     if ($pdo === null) {

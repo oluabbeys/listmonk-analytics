@@ -1,7 +1,9 @@
 <?php
+require_once '../includes/auth.php';
 require_once '../includes/config.php';
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
+requireAuthApi();
 
 $action = $_GET['action'] ?? 'overview';
 $db = getDB();

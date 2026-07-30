@@ -1,3 +1,7 @@
+<?php
+require_once 'includes/auth.php';
+requireAuthPage();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,6 +35,9 @@
       <span class="pulse"></span>
       <span id="lastRefresh">Refreshing...</span>
     </div>
+    <a href="logout.php" class="nav-item" style="margin-top:8px;">
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
   </div>
 </div>
 
