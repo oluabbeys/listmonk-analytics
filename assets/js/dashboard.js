@@ -32,6 +32,7 @@ function loadPage(page) {
     case 'live':      loadLive(); break;
     case 'trends':    loadTrends(); break;
     case 'lists':     loadLists(); break;
+    case 'bounces':   loadBounces(); break;
     case 'domains':   loadDomains(); break;
     case 'heatmap':   loadHeatmap(); break;
   }
@@ -57,8 +58,8 @@ async function loadOverview() {
     Object.values(overview.campaigns || {}).reduce((a, b) => a + b, 0).toLocaleString();
   document.getElementById('stat-opens-today').textContent =
     (overview.opens_today || 0).toLocaleString();
-  document.getElementById('stat-blocklisted').textContent =
-    (overview.total_blocklisted || 0).toLocaleString();
+  document.getElementById('stat-bounces').textContent =
+    (overview.total_bounces || 0).toLocaleString();
 
   // Trends chart
   destroyChart('trendsChart');
@@ -169,6 +170,7 @@ async function loadCampaigns() {
       </td>
       <td>${c.unique_clicks || 0}</td>
       <td><small>${c.click_rate}%</small></td>
+      <td>${c.total_bounces > 0 ? `<span class="badge bg-danger">${c.total_bounces}</span> <small>(${c.bounce_rate}%)</small>` : '—'}</td>
       <td><small>${c.started_at ? formatDate(c.started_at) : '—'}</small></td>
       <td>
         <button class="btn btn-xs btn-outline-primary" onclick="showCampaignDetail(${c.id}, '${escHtml(c.name)}')">
@@ -204,23 +206,27 @@ async function showCampaignDetail(id, name) {
   const clickRate = s.total > 0 ? Math.round(s.clicked / s.total * 100) : 0;
 
   document.getElementById('campaignModalBody').innerHTML = `
-    <div class="row g-3 mb-4">
-      <div class="col-3 text-center">
+    <div class="row g-3 mb-4 text-center">
+      <div class="col">
         <div class="fw-bold fs-3 text-warning">${s.total}</div><small class="text-muted">Total</small>
       </div>
-      <div class="col-3 text-center">
+      <div class="col">
         <div class="fw-bold fs-3 text-success">${s.opened}</div>
         <small class="text-muted">Opened (${openRate}%)</small>
         <div class="mini-progress mt-1"><div class="mini-progress-bar" style="width:${openRate}%;background:#2e7d32"></div></div>
       </div>
-      <div class="col-3 text-center">
+      <div class="col">
         <div class="fw-bold fs-3 text-primary">${s.clicked}</div>
         <small class="text-muted">Clicked (${clickRate}%)</small>
         <div class="mini-progress mt-1"><div class="mini-progress-bar" style="width:${clickRate}%"></div></div>
       </div>
-      <div class="col-3 text-center">
-        <div class="fw-bold fs-3 text-danger">${s.not_opened}</div>
+      <div class="col">
+        <div class="fw-bold fs-3 text-muted">${s.not_opened}</div>
         <small class="text-muted">Not Opened</small>
+      </div>
+      <div class="col">
+        <div class="fw-bold fs-3 text-danger">${s.bounced}</div>
+        <small class="text-muted">Bounced</small>
       </div>
     </div>
 
@@ -251,7 +257,7 @@ async function showCampaignDetail(id, name) {
       <table class="table table-sm table-hover">
         <thead style="position:sticky;top:0;background:#fff;">
           <tr>
-            <th>Email</th><th>Name</th><th>Opens</th><th>Clicks</th><th>First Opened</th>
+            <th>Email</th><th>Name</th><th>Opens</th><th>Clicks</th><th>Bounced</th><th>First Opened</th>
           </tr>
         </thead>
         <tbody>
@@ -261,6 +267,7 @@ async function showCampaignDetail(id, name) {
               <td><small>${sub.name || '—'}</small></td>
               <td>${sub.open_count > 0 ? `<span class="badge bg-success">${sub.open_count}</span>` : '—'}</td>
               <td>${sub.click_count > 0 ? `<span class="badge bg-primary">${sub.click_count}</span>` : '—'}</td>
+              <td>${sub.bounce_count > 0 ? `<span class="badge bg-danger">${sub.bounce_type}</span>` : '—'}</td>
               <td><small>${sub.first_open ? formatDateTime(sub.first_open) : '<span class="text-danger">Not opened</span>'}</small></td>
             </tr>
           `).join('')}
@@ -484,6 +491,88 @@ async function loadLists() {
   `;
 }
 
+// ── BOUNCES ───────────────────────────────────────────────────────────
+async function loadBounces() {
+  const [overview, trend, recent, domains] = await Promise.all([
+    api('bounces_overview'), api('bounces_trend'), api('bounces_recent'), api('bounces_domains')
+  ]);
+
+  const byType = overview.by_type || {};
+  document.getElementById('stat-bounce-hard').textContent = (byType.hard || 0).toLocaleString();
+  document.getElementById('stat-bounce-soft').textContent = (byType.soft || 0).toLocaleString();
+  document.getElementById('stat-bounce-complaint').textContent = (byType.complaint || 0).toLocaleString();
+  document.getElementById('stat-bounce-24h').textContent = (overview.last_24h || 0).toLocaleString();
+
+  // Trend chart — stack by type per day
+  const days = [...new Set(trend.map(r => r.day))].sort();
+  const types = ['hard', 'soft', 'complaint'];
+  const colors = { hard: '#ef5350', soft: '#ff9900', complaint: '#90a4ae' };
+
+  destroyChart('bouncesTrendChart');
+  const ctx = document.getElementById('bouncesTrendChart').getContext('2d');
+  charts.bouncesTrend = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: days.map(d => formatDate(d)),
+      datasets: types.map(t => ({
+        label: t.charAt(0).toUpperCase() + t.slice(1),
+        data: days.map(d => {
+          const row = trend.find(r => r.day === d && r.type === t);
+          return row ? parseInt(row.count) : 0;
+        }),
+        backgroundColor: colors[t]
+      }))
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' } },
+      scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+    }
+  });
+
+  // Bounces by domain
+  document.getElementById('bouncesDomainsTable').innerHTML = domains.length === 0
+    ? '<div class="text-center text-muted py-4">No bounce data yet</div>'
+    : `
+    <table class="table table-sm">
+      <thead><tr><th>Domain</th><th>Hard</th><th>Soft</th><th>Total</th></tr></thead>
+      <tbody>
+        ${domains.map(d => `
+          <tr>
+            <td>${d.domain}</td>
+            <td class="text-danger">${d.hard}</td>
+            <td class="text-warning">${d.soft}</td>
+            <td><strong>${d.total}</strong></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  // Recent bounce events table
+  const tbody = document.getElementById('bouncesList');
+  tbody.innerHTML = recent.length === 0
+    ? '<tr><td colspan="7" class="text-center text-muted py-4">No bounce events recorded</td></tr>'
+    : recent.map(b => `
+      <tr>
+        <td><small>${b.email}</small></td>
+        <td><small>${b.name || '—'}</small></td>
+        <td><span class="badge bg-${b.type === 'hard' ? 'danger' : b.type === 'complaint' ? 'secondary' : 'warning'}">${b.type}</span></td>
+        <td><small>${b.source || '—'}</small></td>
+        <td><small>${b.campaign_name || '—'}</small></td>
+        <td><span class="badge bg-${b.subscriber_status === 'enabled' ? 'success' : 'danger'}">${b.subscriber_status}</span></td>
+        <td><small>${formatDateTime(b.created_at)}</small></td>
+      </tr>
+    `).join('');
+
+  document.getElementById('bouncesSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    tbody.querySelectorAll('tr').forEach(tr => {
+      tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+}
+
 // ── SUBSCRIBER LOOKUP ─────────────────────────────────────────────────
 document.getElementById('searchSubscriber').addEventListener('click', async () => {
   const email = document.getElementById('subscriberEmail').value.trim();
@@ -540,6 +629,26 @@ document.getElementById('searchSubscriber').addEventListener('click', async () =
             </table>
           </div>
         </div>
+        ${data.bounces.length > 0 ? `
+        <div class="card-panel mt-3">
+          <h6>Bounce History (${data.bounces.length})</h6>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Type</th><th>Source</th><th>Campaign</th><th>When</th></tr></thead>
+              <tbody>
+                ${data.bounces.map(b => `
+                  <tr>
+                    <td><span class="badge bg-${b.type === 'hard' ? 'danger' : b.type === 'complaint' ? 'secondary' : 'warning'}">${b.type}</span></td>
+                    <td><small>${b.source || '—'}</small></td>
+                    <td><small>${b.campaign_name || '—'}</small></td>
+                    <td><small>${formatDateTime(b.created_at)}</small></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        ` : ''}
       </div>
     </div>
   `;

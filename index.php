@@ -26,6 +26,7 @@ requireAuthPage();
     <a href="#" class="nav-item" data-page="live"><i class="fas fa-circle text-danger"></i> Live Feed</a>
     <a href="#" class="nav-item" data-page="trends"><i class="fas fa-chart-line"></i> Trends</a>
     <a href="#" class="nav-item" data-page="lists"><i class="fas fa-list"></i> Lists</a>
+    <a href="#" class="nav-item" data-page="bounces"><i class="fas fa-exclamation-triangle"></i> Bounces</a>
     <a href="#" class="nav-item" data-page="subscribers"><i class="fas fa-users"></i> Subscribers</a>
     <a href="#" class="nav-item" data-page="domains"><i class="fas fa-globe"></i> Domains</a>
     <a href="#" class="nav-item" data-page="heatmap"><i class="fas fa-fire"></i> Send Heatmap</a>
@@ -82,9 +83,9 @@ requireAuthPage();
       </div>
       <div class="col-6 col-md-3">
         <div class="stat-card">
-          <div class="stat-icon bg-danger"><i class="fas fa-ban"></i></div>
-          <div class="stat-value" id="stat-blocklisted">—</div>
-          <div class="stat-label">Blocklisted</div>
+          <div class="stat-icon bg-danger"><i class="fas fa-exclamation-triangle"></i></div>
+          <div class="stat-value" id="stat-bounces">—</div>
+          <div class="stat-label">Total Bounces</div>
         </div>
       </div>
     </div>
@@ -140,6 +141,7 @@ requireAuthPage();
               <th>Open Rate</th>
               <th>Clicks</th>
               <th>Click Rate</th>
+              <th>Bounces</th>
               <th>Sent</th>
               <th>Actions</th>
             </tr>
@@ -221,6 +223,76 @@ requireAuthPage();
     <div class="card-panel">
       <div class="panel-header"><h6>All Lists</h6></div>
       <div id="listsContent"></div>
+    </div>
+  </div>
+
+  <!-- PAGE: BOUNCES -->
+  <div class="page" id="page-bounces">
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon bg-danger"><i class="fas fa-times-circle"></i></div>
+          <div class="stat-value" id="stat-bounce-hard">—</div>
+          <div class="stat-label">Hard Bounces</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon bg-warning"><i class="fas fa-redo"></i></div>
+          <div class="stat-value" id="stat-bounce-soft">—</div>
+          <div class="stat-label">Soft Bounces</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon bg-secondary"><i class="fas fa-flag"></i></div>
+          <div class="stat-value" id="stat-bounce-complaint">—</div>
+          <div class="stat-label">Complaints</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon bg-primary"><i class="fas fa-clock"></i></div>
+          <div class="stat-value" id="stat-bounce-24h">—</div>
+          <div class="stat-label">Last 24 Hours</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-8">
+        <div class="card-panel">
+          <div class="panel-header"><h6>Bounces — Last 30 Days</h6></div>
+          <canvas id="bouncesTrendChart" height="120"></canvas>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card-panel">
+          <div class="panel-header"><h6>Bounces by Domain</h6></div>
+          <div id="bouncesDomainsTable"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-1">
+      <div class="col-12">
+        <div class="card-panel">
+          <div class="panel-header">
+            <h6>Recent Bounce Events</h6>
+            <input type="text" class="form-control form-control-sm w-25" id="bouncesSearch" placeholder="Search email or campaign...">
+          </div>
+          <div class="table-responsive" style="max-height:500px;overflow-y:auto;">
+            <table class="table table-hover table-sm" id="bouncesTable">
+              <thead style="position:sticky;top:0;background:#fff;">
+                <tr>
+                  <th>Email</th><th>Name</th><th>Type</th><th>Source</th><th>Campaign</th><th>Status</th><th>When</th>
+                </tr>
+              </thead>
+              <tbody id="bouncesList"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

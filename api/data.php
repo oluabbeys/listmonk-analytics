@@ -47,9 +47,16 @@ switch ($action) {
         $stmt = $db->query("SELECT COUNT(*) as count FROM link_clicks");
         $stats['total_clicks'] = (int)$stmt->fetch()['count'];
 
-        // Total bounces
+        // Total blocklisted (downstream effect of repeated hard bounces, not bounce events themselves)
         $stmt = $db->query("SELECT COUNT(*) as count FROM subscribers WHERE status='blocklisted'");
         $stats['total_blocklisted'] = (int)$stmt->fetch()['count'];
+
+        // Actual bounce events from Listmonk's bounces table
+        $stmt = $db->query("SELECT COUNT(*) as count FROM bounces");
+        $stats['total_bounces'] = (int)$stmt->fetch()['count'];
+
+        $stmt = $db->query("SELECT COUNT(*) as count FROM bounces WHERE created_at >= NOW() - INTERVAL '24 hours'");
+        $stats['bounces_today'] = (int)$stmt->fetch()['count'];
 
         // Lists count
         $stmt = $db->query("SELECT COUNT(*) as count FROM lists");
@@ -74,6 +81,7 @@ switch ($action) {
                 (SELECT COUNT(*) FROM campaign_views cv WHERE cv.campaign_id = c.id) as total_opens,
                 (SELECT COUNT(DISTINCT lc.subscriber_id) FROM link_clicks lc WHERE lc.campaign_id = c.id) as unique_clicks,
                 (SELECT COUNT(*) FROM link_clicks lc WHERE lc.campaign_id = c.id) as total_clicks,
+                (SELECT COUNT(*) FROM bounces b WHERE b.campaign_id = c.id) as total_bounces,
                 (SELECT COUNT(DISTINCT sl.subscriber_id)
                  FROM subscriber_lists sl
                  JOIN campaign_lists cl ON sl.list_id = cl.list_id
@@ -87,6 +95,8 @@ switch ($action) {
                 ? round($c['unique_opens'] / $c['total_recipients'] * 100, 1) : 0;
             $c['click_rate'] = $c['total_recipients'] > 0
                 ? round($c['unique_clicks'] / $c['total_recipients'] * 100, 1) : 0;
+            $c['bounce_rate'] = $c['total_recipients'] > 0
+                ? round($c['total_bounces'] / $c['total_recipients'] * 100, 1) : 0;
         }
         echo json_encode($campaigns);
         break;
@@ -109,18 +119,21 @@ switch ($action) {
                 s.name,
                 s.status,
                 MIN(cv.created_at) as first_open,
-                COUNT(cv.id) as open_count,
-                COUNT(lc.id) as click_count,
-                MIN(lc.created_at) as first_click
+                COUNT(DISTINCT cv.id) as open_count,
+                COUNT(DISTINCT lc.id) as click_count,
+                MIN(lc.created_at) as first_click,
+                COUNT(DISTINCT b.id) as bounce_count,
+                MAX(b.type) as bounce_type
             FROM subscribers s
             JOIN subscriber_lists sl ON s.id = sl.subscriber_id
             JOIN campaign_lists cl ON sl.list_id = cl.list_id AND cl.campaign_id = ?
             LEFT JOIN campaign_views cv ON cv.subscriber_id = s.id AND cv.campaign_id = ?
             LEFT JOIN link_clicks lc ON lc.subscriber_id = s.id AND lc.campaign_id = ?
+            LEFT JOIN bounces b ON b.subscriber_id = s.id AND b.campaign_id = ?
             GROUP BY s.id, s.email, s.name, s.status
             ORDER BY first_open ASC NULLS LAST
         ");
-        $stmt->execute([$id, $id, $id]);
+        $stmt->execute([$id, $id, $id, $id]);
         $subscribers = $stmt->fetchAll();
 
         // Opens over time (hourly)
@@ -161,7 +174,8 @@ switch ($action) {
                 'total' => count($subscribers),
                 'opened' => count(array_filter($subscribers, fn($s) => $s['first_open'])),
                 'clicked' => count(array_filter($subscribers, fn($s) => $s['click_count'] > 0)),
-                'not_opened' => count(array_filter($subscribers, fn($s) => !$s['first_open']))
+                'not_opened' => count(array_filter($subscribers, fn($s) => !$s['first_open'])),
+                'bounced' => count(array_filter($subscribers, fn($s) => $s['bounce_count'] > 0))
             ]
         ]);
         break;
@@ -237,10 +251,22 @@ switch ($action) {
         $stmt->execute([$subscriber['id']]);
         $lists = $stmt->fetchAll();
 
+        // Bounce history
+        $stmt = $db->prepare("
+            SELECT b.type, b.source, b.created_at, c.name as campaign_name
+            FROM bounces b
+            LEFT JOIN campaigns c ON c.id = b.campaign_id
+            WHERE b.subscriber_id = ?
+            ORDER BY b.created_at DESC
+        ");
+        $stmt->execute([$subscriber['id']]);
+        $bounces = $stmt->fetchAll();
+
         echo json_encode([
             'subscriber' => $subscriber,
             'history' => $history,
             'lists' => $lists,
+            'bounces' => $bounces,
             'engagement_score' => calculateEngagementScore($history)
         ]);
         break;
@@ -334,6 +360,82 @@ switch ($action) {
                 COUNT(CASE WHEN status='enabled' THEN 1 END) as active,
                 COUNT(CASE WHEN status='blocklisted' THEN 1 END) as blocklisted
             FROM subscribers
+            GROUP BY domain
+            ORDER BY total DESC
+            LIMIT 20
+        ");
+        echo json_encode($stmt->fetchAll());
+        break;
+
+    // ── BOUNCES OVERVIEW ──────────────────────────────────────────────
+    case 'bounces_overview':
+        $stats = [];
+
+        $stmt = $db->query("SELECT type, COUNT(*) as count FROM bounces GROUP BY type");
+        $by_type = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $by_type[$row['type']] = (int)$row['count'];
+        }
+        $stats['by_type'] = $by_type;
+        $stats['total'] = array_sum($by_type);
+
+        $stmt = $db->query("SELECT COUNT(*) as count FROM bounces WHERE created_at >= NOW() - INTERVAL '24 hours'");
+        $stats['last_24h'] = (int)$stmt->fetch()['count'];
+
+        $stmt = $db->query("SELECT COUNT(*) as count FROM bounces WHERE created_at >= NOW() - INTERVAL '7 days'");
+        $stats['last_7d'] = (int)$stmt->fetch()['count'];
+
+        echo json_encode($stats);
+        break;
+
+    // ── BOUNCES TREND (30 DAYS BY TYPE) ───────────────────────────────
+    case 'bounces_trend':
+        $stmt = $db->query("
+            SELECT
+                DATE_TRUNC('day', created_at) as day,
+                type,
+                COUNT(*) as count
+            FROM bounces
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY day, type
+            ORDER BY day ASC
+        ");
+        echo json_encode($stmt->fetchAll());
+        break;
+
+    // ── RECENT BOUNCE EVENTS ───────────────────────────────────────────
+    case 'bounces_recent':
+        $limit = min((int)($_GET['limit'] ?? 100), 500);
+        $stmt = $db->prepare("
+            SELECT
+                b.type,
+                b.source,
+                b.created_at,
+                s.email,
+                s.name,
+                s.status as subscriber_status,
+                c.name as campaign_name
+            FROM bounces b
+            JOIN subscribers s ON s.id = b.subscriber_id
+            LEFT JOIN campaigns c ON c.id = b.campaign_id
+            ORDER BY b.created_at DESC
+            LIMIT ?
+        ");
+        $stmt->execute([$limit]);
+        echo json_encode($stmt->fetchAll());
+        break;
+
+    // ── BOUNCES BY DOMAIN ──────────────────────────────────────────────
+    case 'bounces_domains':
+        $stmt = $db->query("
+            SELECT
+                split_part(s.email, '@', 2) as domain,
+                COUNT(*) as total,
+                COUNT(CASE WHEN b.type = 'hard' THEN 1 END) as hard,
+                COUNT(CASE WHEN b.type = 'soft' THEN 1 END) as soft,
+                COUNT(CASE WHEN b.type = 'complaint' THEN 1 END) as complaint
+            FROM bounces b
+            JOIN subscribers s ON s.id = b.subscriber_id
             GROUP BY domain
             ORDER BY total DESC
             LIMIT 20
